@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="输入分片键和分表数量，计算目标分表。" />
+  <title>分表定位器 · Shard Finder</title>
+  <link rel="stylesheet" href="./tool-theme.css">
+  <style>
+
+    .tool-card { overflow: hidden; }
+    .card-heading {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 18px; border-bottom: 1px solid var(--line); background: #fcfcfe;
+    }
+    .card-heading h2 { margin: 0 0 7px; font-size: 15px; }
+    .card-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .live-dot { display: flex; align-items: center; gap: 8px; white-space: nowrap; color: var(--muted); font-size: 12px; }
+    .live-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(36, 162, 118, .12); }
+    form { padding: 24px; }
+    .form-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 20px; }
+    /* 提示文案长度不同，仍让两列输入控件从同一基线开始排列。 */
+    .field { display: grid; align-content: start; gap: 8px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { color: #45495e; font-size: 13px; font-weight: 700; }
+    .field-hint { color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.6; }
+    input::placeholder { color: #b0b4c4; }
+    .sample-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; color: var(--muted); font-size: 12px; }
+    .result { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; margin-top: 24px; padding: 24px; border: 1px solid #dedafc; border-radius: 16px; background: var(--violet-soft); }
+    .result-label { margin-bottom: 9px; color: var(--muted); font-size: 12px; }
+    .result-value { overflow-wrap: anywhere; color: var(--violet-dark); font: 800 clamp(23px, 3vw, 32px)/1.4 var(--mono); }
+    .equation { margin: 18px 0 0; color: var(--muted); font: 12px/1.7 var(--mono); overflow-wrap: anywhere; }
+    .equation strong { color: var(--ink); }
+    .error { min-height: 18px; margin: 9px 0 0; color: var(--red); font-size: 12px; }
+    @media (max-width: 560px) {
+      form { padding: 16px; }
+      .form-grid, .result { grid-template-columns: 1fr; }
+      .field.full { grid-column: auto; }
+      .result { padding: 18px; }
+      .card-heading { align-items: flex-start; padding: 16px; }
+    }
+    @media print {
+      .topbar, .hint-row, .sample-row, .copy-btn, .footer-note { display: none; }
+      body { background: white; }
+      .page-shell { padding: 0; }
+      .workspace { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell" id="top">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="回到分表定位器顶部">
+        <span class="brand-mark" aria-hidden="true">#</span>
+        <div class="brand-copy"><div class="brand-name">分表定位器</div><div class="brand-subtitle">把数据的位置找准确</div></div>
+      </a>
+      <div class="topbar-note"><span class="status-dot"></span>本地计算 · 无需联网</div>
+    </header>
+    <section class="hero" aria-labelledby="pageTitle">
+      <div class="eyebrow">分表工作台</div>
+      <h1 id="pageTitle">一眼找到数据在哪张表。</h1>
+      <p class="hero-description">输入分片键，选择分表数量，按取模规则计算目标分表。例如 32 张表，余数就对应表下标。</p>
+      <div class="hint-row" aria-label="工具特点"><span><i></i>支持超长数字 ID</span><span><i></i>结果实时更新</span><span><i></i>无需联网</span></div>
+    </section>
+        <section class="workspace tool-card" id="tool" aria-labelledby="tool-title">
+          <div class="card-heading">
+            <div>
+              <h2 id="tool-title">分表定位</h2>
+              <p>按 0 开始编号：余数 0 对应第 0 张表。</p>
+            </div>
+            <span class="live-dot">实时计算</span>
+          </div>
+
+          <form id="shard-form" novalidate>
+            <div class="form-grid">
+              <div class="field">
+                <label for="shard-key">分片键</label>
+                <input id="shard-key" name="shardKey" type="text" inputmode="numeric" autocomplete="off" placeholder="例如：10001" value="10001" aria-describedby="key-hint key-error" />
+                <span id="key-hint" class="field-hint">请输入整数，支持正数、负数和超长数字。</span>
+              </div>
+
+              <div class="field">
+                <label for="table-count">分表数量</label>
+                <select id="table-count" name="tableCount" aria-label="选择分表数量">
+                  <option value="2">2 张表</option>
+                  <option value="4">4 张表</option>
+                  <option value="8">8 张表</option>
+                  <option value="16">16 张表</option>
+                  <option value="32" selected>32 张表</option>
+                  <option value="64">64 张表</option>
+                  <option value="128">128 张表</option>
+                  <option value="256">256 张表</option>
+                </select>
+              </div>
+
+              <div class="field full">
+                <label for="table-prefix">表名前缀 <span class="field-hint">可选，用于生成表名</span></label>
+                <input id="table-prefix" name="tablePrefix" type="text" autocomplete="off" value="t_order" placeholder="例如：t_order" aria-describedby="prefix-hint" />
+                <span id="prefix-hint" class="field-hint">结果会生成：表名前缀_余数，例如 t_order_17。</span>
+              </div>
+            </div>
+
+            <div class="sample-row" aria-label="快速示例">
+              <span>快速示例</span>
+              <button class="button sample" type="button" data-key="10001" data-count="32">10001 / 32</button>
+              <button class="button sample" type="button" data-key="20260917" data-count="64">20260917 / 64</button>
+              <button class="button sample" type="button" data-key="987654321" data-count="16">987654321 / 16</button>
+            </div>
+
+            <div class="result" aria-live="polite" aria-atomic="true">
+              <div>
+                <div class="result-label">目标分表</div>
+                <div id="result-value" class="result-value">t_order_17</div>
+              </div>
+              <button id="copy-button" class="button primary copy-btn" type="button">复制表名</button>
+            </div>
+            <p class="equation" id="equation">分片键 <strong>10001</strong> ÷ 表数量 <strong>32</strong>，余数为 <strong>17</strong></p>
+            <p id="key-error" class="error" role="alert"></p>
+          </form>
+        </section>
+    <footer class="footer-note">分表定位器 · 本地计算，不存储、不上传</footer>
+  </main>
+
+  <script>
+    (() => {
+      const keyInput = document.querySelector("#shard-key");
+      const countSelect = document.querySelector("#table-count");
+      const prefixInput = document.querySelector("#table-prefix");
+      const resultValue = document.querySelector("#result-value");
+      const equation = document.querySelector("#equation");
+      const error = document.querySelector("#key-error");
+      const copyButton = document.querySelector("#copy-button");
+
+      // 使用 BigInt 计算，保证雪花 ID、订单号等超长整数不会发生精度丢失。
+      function calculate() {
+        const rawKey = keyInput.value.trim();
+        const tableCount = BigInt(countSelect.value);
+        const prefix = prefixInput.value.trim() || "table";
+
+        if (!/^[+-]?\d+$/.test(rawKey)) {
+          error.textContent = "请输入有效的整数分片键。";
+          resultValue.textContent = "等待有效分片键";
+          equation.textContent = "分片键必须是整数，才能进行取模计算。";
+          copyButton.disabled = true;
+          copyButton.setAttribute("aria-disabled", "true");
+          return null;
+        }
+
+        const shardKey = BigInt(rawKey);
+        // 归一化负数余数，确保表下标始终落在 0 到 N-1 的范围内。
+        const remainder = ((shardKey % tableCount) + tableCount) % tableCount;
+        const tableName = `${prefix}_${remainder.toString()}`;
+
+        error.textContent = "";
+        resultValue.textContent = tableName;
+        equation.innerHTML = `分片键 <strong>${shardKey.toString()}</strong> ÷ 表数量 <strong>${tableCount.toString()}</strong>，余数为 <strong>${remainder.toString()}</strong>`;
+        copyButton.disabled = false;
+        copyButton.removeAttribute("aria-disabled");
+        return tableName;
+      }
+
+      async function copyResult() {
+        const tableName = calculate();
+        if (!tableName) return;
+
+        try {
+          await navigator.clipboard.writeText(tableName);
+        } catch (clipboardError) {
+          // file:// 页面或旧浏览器可能禁用 Clipboard API，使用隐藏输入作为兼容兜底。
+          const fallback = document.createElement("textarea");
+          fallback.value = tableName;
+          fallback.setAttribute("readonly", "");
+          fallback.style.position = "fixed";
+          fallback.style.opacity = "0";
+          document.body.appendChild(fallback);
+          fallback.select();
+          document.execCommand("copy");
+          fallback.remove();
+        }
+
+        const originalText = copyButton.textContent;
+        copyButton.textContent = "已复制 ✓";
+        window.setTimeout(() => { copyButton.textContent = originalText; }, 1400);
+      }
+
+      [keyInput, prefixInput].forEach((element) => element.addEventListener("input", calculate));
+      countSelect.addEventListener("change", calculate);
+      copyButton.addEventListener("click", copyResult);
+
+      document.querySelectorAll(".sample").forEach((sample) => {
+        sample.addEventListener("click", () => {
+          keyInput.value = sample.dataset.key;
+          countSelect.value = sample.dataset.count;
+          calculate();
+          keyInput.focus();
+        });
+      });
+
+      calculate();
+    })();
+  </script>
+</body>
+</html>

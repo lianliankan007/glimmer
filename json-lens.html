@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#151722" />
+  <title>JSON Lens · 格式化与结构查看器</title>
+  <link rel="stylesheet" href="./tool-theme.css">
+  <style>
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 15px 18px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .92);
+    }
+    .toolbar-group { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .shortcut { display: inline-flex; align-items: center; gap: 3px; margin-left: 3px; color: rgba(255, 255, 255, .68); font: 500 10px var(--mono); }
+
+    .workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 610px; }
+    .pane { min-width: 0; display: flex; flex-direction: column; }
+    .pane + .pane { border-left: 1px solid var(--line); }
+    .pane-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 58px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fcfcfe;
+    }
+    .pane-title { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 800; }
+    .pane-title .label { color: var(--muted); font: 700 10px var(--mono); letter-spacing: .11em; text-transform: uppercase; }
+    .pane-actions { display: flex; align-items: center; gap: 7px; }
+    .tiny-button {
+      min-height: 30px;
+      padding: 0 9px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      color: var(--muted);
+      background: transparent;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .tiny-button:hover { border-color: var(--line); color: var(--violet-dark); background: #fff; }
+    .input-area { display: flex; flex: 1; min-height: 0; background: #fbfbfd; }
+    .line-numbers {
+      width: 47px;
+      flex: 0 0 47px;
+      overflow: hidden;
+      padding: 17px 11px 17px 0;
+      border-right: 1px solid var(--line);
+      color: #b0b4c4;
+      text-align: right;
+      user-select: none;
+      font: 12px/1.65rem var(--mono);
+    }
+    .json-input {
+      width: 100%;
+      min-height: 550px;
+      resize: none;
+      padding: 17px 18px;
+      border: 0;
+      outline: 0;
+      color: #313548;
+      background: transparent;
+      font: 13px/1.65rem var(--mono);
+      tab-size: 2;
+      white-space: pre;
+      overflow: auto;
+    }
+    .json-input::selection { background: #dcd9ff; }
+    .json-input.is-invalid { background: #fff9fa; }
+    .input-footer, .output-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 44px;
+      padding: 0 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .input-footer kbd {
+      padding: 3px 6px;
+      border: 1px solid #dfe1e9;
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      background: #fff;
+      font: 600 10px var(--mono);
+    }
+    .output-pane { background: #fff; }
+    .view-tabs { display: flex; align-items: center; gap: 3px; padding: 4px; border-radius: 9px; background: #f0f1f6; }
+    .view-tab { min-height: 28px; padding: 0 10px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 11px; font-weight: 800; }
+    .view-tab.active { color: var(--ink); background: #fff; box-shadow: 0 2px 7px rgba(22, 24, 35, .08); }
+    .output-scroll { flex: 1; min-height: 0; overflow: auto; }
+    .code-output {
+      min-height: 550px;
+      margin: 0;
+      padding: 20px;
+      color: #3f4357;
+      background: #fff;
+      font: 13px/1.7rem var(--mono);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .code-output.empty { display: grid; min-height: 550px; place-items: center; color: #b0b4c4; font-family: var(--sans); }
+    .tree-view { min-height: 550px; padding: 17px 20px 24px; background: #fff; font: 13px/1.7rem var(--mono); }
+    .tree-view.hidden, .code-output.hidden { display: none; }
+    .empty-state { max-width: 300px; padding: 36px 18px; text-align: center; }
+    .empty-icon { display: grid; width: 45px; height: 45px; margin: 0 auto 13px; place-items: center; border-radius: 14px; color: var(--violet-dark); background: var(--violet-soft); font: 700 15px var(--mono); }
+    .empty-title { margin-bottom: 5px; color: #5c6175; font-size: 14px; font-weight: 800; }
+    .empty-copy { color: #a2a6b5; font-size: 12px; line-height: 1.6; }
+    .tree-node { position: relative; }
+    .tree-row { display: flex; align-items: center; min-height: 31px; padding-right: 5px; border-radius: 7px; white-space: nowrap; }
+    .tree-row:hover { background: #f6f5ff; }
+    .tree-toggle, .tree-spacer { display: inline-grid; width: 22px; height: 26px; flex: 0 0 22px; place-items: center; }
+    .tree-toggle { margin-right: 1px; padding: 0; border: 0; border-radius: 5px; color: #8f94a8; background: transparent; transition: background .15s ease; }
+    .tree-toggle:hover { color: var(--violet-dark); background: var(--violet-soft); }
+    .chevron { display: block; transition: transform .18s ease; font-size: 15px; line-height: 1; }
+    .tree-toggle[aria-expanded="false"] .chevron { transform: rotate(-90deg); }
+    .tree-key { color: #5960b7; }
+    .tree-index { color: #9398aa; }
+    .tree-colon { margin: 0 8px 0 2px; color: #c1c4cf; }
+    .tree-value.string { color: #21886c; }
+    .tree-value.number { color: #b261d4; }
+    .tree-value.boolean { color: #ce783f; }
+    .tree-value.null { color: #9da1ae; font-style: italic; }
+    .tree-kind { margin-left: auto; padding: 0 7px; border-radius: 999px; color: #969aab; background: #f6f7fa; font: 10px/20px var(--sans); }
+    .tree-children { padding-left: 22px; border-left: 1px solid #ececf4; margin-left: 10px; }
+    .tree-children[data-open="false"] { display: none; }
+    .error-card { margin: 20px; padding: 16px; border: 1px solid #f1ccd2; border-radius: 12px; color: #aa4a5b; background: #fff6f7; font-family: var(--sans); }
+    .error-card strong { display: block; margin-bottom: 4px; font-size: 13px; }
+    .error-card span { font: 12px/1.6 var(--mono); }
+
+    .toast {
+      position: fixed;
+      z-index: 10;
+      left: 50%;
+      bottom: 24px;
+      transform: translate(-50%, 18px);
+      padding: 11px 15px;
+      border-radius: 10px;
+      color: #fff;
+      background: #222534;
+      box-shadow: 0 12px 32px rgba(25, 27, 40, .18);
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    .toast.show { transform: translate(-50%, 0); opacity: 1; }
+    .toast.error { background: #a84253; }
+
+
+    @media (max-width: 900px) {
+      .workspace-grid { grid-template-columns: 1fr; }
+      .pane + .pane { border-top: 1px solid var(--line); border-left: 0; }
+      .output-pane { min-height: 600px; }
+    }
+    @media (max-width: 560px) {
+      .page-shell { padding: 19px 12px 26px; }
+      .topbar-note { display: none; }
+      .toolbar { align-items: stretch; padding: 12px; }
+      .toolbar-group { width: 100%; }
+      .toolbar-group:last-child { justify-content: flex-end; }
+      .button { flex: 1; padding: 0 9px; }
+      .button.icon-button { flex: 0 0 36px; }
+      .pane-header { padding: 0 12px; }
+      .pane-header .tiny-button { padding: 0 5px; }
+      .code-output, .tree-view { padding-left: 13px; padding-right: 13px; }
+      .tree-children { padding-left: 15px; margin-left: 8px; }
+      .tree-kind { display: none; }
+      .hint-row { flex-wrap: wrap; line-height: 1.5; }
+    }
+    @media print {
+      body { background: #fff; }
+      .page-shell { width: 100%; padding: 0; }
+      .topbar-note, .toolbar, .input-pane, .footer-note, .hint-row, .toast { display: none !important; }
+      .workspace { border: 0; box-shadow: none; }
+      .workspace-grid { display: block; }
+      .pane + .pane { border: 0; }
+      .pane-header { border: 0; }
+      .code-output { min-height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="JSON Lens">
+        <div class="brand-mark" aria-hidden="true">{ }</div>
+        <div class="brand-copy">
+          <div class="brand-name">JSON Lens</div>
+          <div class="brand-subtitle">把嵌套数据看清楚</div>
+        </div>
+      </div>
+      <div class="topbar-note"><span class="status-dot" id="statusDot"></span><span id="statusText">等待输入 JSON</span></div>
+    </header>
+
+    <section class="hero" aria-labelledby="pageTitle">
+      <div class="eyebrow">JSON WORKBENCH</div>
+      <h1 id="pageTitle">一眼看懂你的 JSON。</h1>
+      <p class="hero-description">格式化、压缩、复制，再按每一层大括号自由展开或收起。数据只在浏览器本地处理，不上传任何内容。</p>
+      <div class="hint-row" aria-label="使用提示">
+        <span><i></i>支持对象与数组层级</span>
+        <span><i></i>Ctrl / ⌘ + Enter 格式化</span>
+        <span><i></i>无依赖 · 可离线打开</span>
+      </div>
+    </section>
+
+    <section class="workspace" aria-label="JSON 编辑工作区">
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <button class="button primary" id="formatButton" type="button">✦ 格式化 <span class="shortcut">⌘↵</span></button>
+          <button class="button" id="compressButton" type="button">↔ 压缩一行</button>
+          <button class="button" id="sampleButton" type="button">载入示例</button>
+        </div>
+        <div class="toolbar-group">
+          <button class="button" id="expandButton" type="button">＋ 展开全部</button>
+          <button class="button" id="collapseButton" type="button">－ 收起全部</button>
+          <button class="button icon-button" id="clearButton" type="button" aria-label="清空输入" title="清空">⌫</button>
+        </div>
+      </div>
+
+      <div class="workspace-grid">
+        <section class="pane input-pane" aria-labelledby="inputTitle">
+          <div class="pane-header">
+            <div class="pane-title" id="inputTitle"><span>输入 JSON</span><span class="label">SOURCE</span></div>
+            <div class="pane-actions">
+              <button class="tiny-button" id="pasteButton" type="button">粘贴</button>
+              <button class="tiny-button" id="selectAllButton" type="button">全选</button>
+            </div>
+          </div>
+          <div class="input-area">
+            <div class="line-numbers" id="lineNumbers" aria-hidden="true">1</div>
+            <textarea id="jsonInput" class="json-input" spellcheck="false" aria-label="JSON 输入框" placeholder="在这里粘贴 JSON…"></textarea>
+          </div>
+          <div class="input-footer"><span id="inputStats">0 字符 · 0 行</span><span>输入后点击“格式化”</span></div>
+        </section>
+
+        <section class="pane output-pane" aria-labelledby="outputTitle">
+          <div class="pane-header">
+            <div class="pane-title" id="outputTitle"><span>结果预览</span><span class="label">PREVIEW</span></div>
+            <div class="pane-actions">
+              <div class="view-tabs" role="tablist" aria-label="结果视图">
+                <button class="view-tab active" data-view="code" type="button" role="tab" aria-selected="true">代码</button>
+                <button class="view-tab" data-view="tree" type="button" role="tab" aria-selected="false">结构</button>
+              </div>
+              <button class="tiny-button" id="copyButton" type="button">复制</button>
+            </div>
+          </div>
+          <div class="output-scroll">
+            <div class="code-output empty" id="codeOutput"><div class="empty-state"><div class="empty-icon">{ }</div><div class="empty-title">等待一段 JSON</div><div class="empty-copy">格式化后，这里会显示可复制的漂亮代码。</div></div></div>
+            <div class="tree-view hidden" id="treeView"></div>
+          </div>
+          <div class="output-footer"><span id="outputStats">未生成结果</span><span id="viewHint">代码视图</span></div>
+        </section>
+      </div>
+    </section>
+    <div class="footer-note">JSON Lens · 本地解析，不存储、不上传</div>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      const SAMPLE = {
+        "project": "JSON Lens",
+        "enabled": true,
+        "owner": {
+          "name": "林墨",
+          "team": "平台工具"
+        },
+        "items": [
+          { "id": 101, "name": "格式化", "tags": ["pretty", "readable"] },
+          { "id": 102, "name": "压缩", "tags": ["minify"] }
+        ],
+        "meta": null
+      };
+
+      const input = document.getElementById('jsonInput');
+      const lineNumbers = document.getElementById('lineNumbers');
+      const codeOutput = document.getElementById('codeOutput');
+      const treeView = document.getElementById('treeView');
+      const inputStats = document.getElementById('inputStats');
+      const outputStats = document.getElementById('outputStats');
+      const viewHint = document.getElementById('viewHint');
+      const statusText = document.getElementById('statusText');
+      const statusDot = document.getElementById('statusDot');
+      const toast = document.getElementById('toast');
+      let latestResult = '';
+      let toastTimer;
+      let nodeId = 0;
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function showToast(message, isError = false) {
+        window.clearTimeout(toastTimer);
+        toast.textContent = message;
+        toast.classList.toggle('error', isError);
+        toast.classList.add('show');
+        toastTimer = window.setTimeout(() => toast.classList.remove('show'), 2400);
+      }
+
+      function updateLineNumbers() {
+        const count = Math.max(1, input.value.split('\n').length);
+        lineNumbers.textContent = Array.from({ length: count }, (_, index) => index + 1).join('\n');
+        inputStats.textContent = `${input.value.length.toLocaleString('zh-CN')} 字符 · ${count} 行`;
+      }
+
+      function syncLineScroll() {
+        lineNumbers.scrollTop = input.scrollTop;
+      }
+
+      function setStatus(message, isError = false) {
+        statusText.textContent = message;
+        statusDot.classList.toggle('error', isError);
+      }
+
+      function parseInput() {
+        try {
+          return { value: JSON.parse(input.value), error: null };
+        } catch (error) {
+          return { value: null, error };
+        }
+      }
+
+      function renderError(error) {
+        const message = error && error.message ? error.message : 'JSON 语法不正确';
+        codeOutput.className = 'code-output empty';
+        codeOutput.textContent = `无法解析：${message}`;
+        treeView.innerHTML = `<div class="error-card"><strong>JSON 解析失败</strong><span>${escapeHtml(message)}</span></div>`;
+        treeView.classList.add('hidden');
+        codeOutput.classList.remove('hidden');
+        outputStats.textContent = '未生成有效结果';
+        viewHint.textContent = '代码视图';
+        input.classList.add('is-invalid');
+        setStatus('JSON 语法有误', true);
+      }
+
+      function primitiveMarkup(value) {
+        if (typeof value === 'string') return `<span class="tree-value string">&quot;${escapeHtml(value)}&quot;</span>`;
+        if (typeof value === 'number') return `<span class="tree-value number">${escapeHtml(value)}</span>`;
+        if (typeof value === 'boolean') return `<span class="tree-value boolean">${value}</span>`;
+        return '<span class="tree-value null">null</span>';
+      }
+
+      function branchSummary(value) {
+        if (Array.isArray(value)) return `[${value.length}]`;
+        return `{${Object.keys(value).length}}`;
+      }
+
+      function renderTree(root) {
+        nodeId = 0;
+        treeView.innerHTML = renderTreeNode(root, 'root', 0, true);
+      }
+
+      function renderTreeNode(value, key, depth, isRoot = false, parentIsArray = false) {
+        const isBranch = value !== null && typeof value === 'object';
+        const currentId = `node-${++nodeId}`;
+        const label = isRoot ? 'root' : parentIsArray ? `[${key}]` : key;
+        const labelClass = isRoot || !parentIsArray ? 'tree-key' : 'tree-index';
+        let markup = `<div class="tree-node" data-node-id="${currentId}" data-depth="${depth}">`;
+        markup += '<div class="tree-row">';
+        if (isBranch) {
+          markup += `<button class="tree-toggle" type="button" aria-expanded="true" aria-label="收起 ${escapeHtml(label)}" data-node-toggle="${currentId}"><span class="chevron">⌄</span></button>`;
+        } else {
+          markup += '<span class="tree-spacer" aria-hidden="true"></span>';
+        }
+        markup += `<span class="${labelClass}">${escapeHtml(label)}</span><span class="tree-colon">:</span>`;
+        if (isBranch) {
+          markup += `<span class="tree-value">${escapeHtml(branchSummary(value))}</span><span class="tree-kind">${Array.isArray(value) ? 'ARRAY' : 'OBJECT'}</span>`;
+        } else {
+          markup += primitiveMarkup(value);
+        }
+        markup += '</div>';
+        if (isBranch) {
+          const entries = Array.isArray(value) ? value.map((item, index) => [index, item]) : Object.entries(value);
+          markup += `<div class="tree-children" data-node-children="${currentId}" data-open="true">`;
+          if (entries.length === 0) markup += '<div class="tree-row"><span class="tree-spacer"></span><span class="tree-value null">空</span></div>';
+          for (const [entryKey, entryValue] of entries) markup += renderTreeNode(entryValue, entryKey, depth + 1, false, Array.isArray(value));
+          markup += '</div>';
+        }
+        markup += '</div>';
+        return markup;
+      }
+
+      function setAllNodes(open) {
+        treeView.querySelectorAll('[data-node-toggle]').forEach((toggle) => {
+          const id = toggle.dataset.nodeToggle;
+          const children = treeView.querySelector(`[data-node-children="${id}"]`);
+          if (!children) return;
+          toggle.setAttribute('aria-expanded', String(open));
+          toggle.setAttribute('aria-label', `${open ? '收起' : '展开'} 层级`);
+          children.dataset.open = String(open);
+        });
+      }
+
+      function updateOutput(value, mode) {
+        input.classList.remove('is-invalid');
+        const indent = mode === 'compact' ? undefined : 2;
+        latestResult = JSON.stringify(value, null, indent);
+        codeOutput.className = 'code-output';
+        codeOutput.textContent = latestResult;
+        renderTree(value);
+        outputStats.textContent = `${latestResult.length.toLocaleString('zh-CN')} 字符 · ${latestResult.split('\n').length} 行`;
+        setStatus(mode === 'compact' ? '已压缩为一行' : 'JSON 有效 · 已格式化');
+      }
+
+      function handleTransform(mode) {
+        if (!input.value.trim()) {
+          latestResult = '';
+          codeOutput.className = 'code-output empty';
+          codeOutput.innerHTML = '<div class="empty-state"><div class="empty-icon">{ }</div><div class="empty-title">先输入 JSON</div><div class="empty-copy">粘贴内容后，就可以开始格式化或压缩。</div></div>';
+          treeView.innerHTML = '';
+          outputStats.textContent = '未生成结果';
+          setStatus('等待输入 JSON');
+          return;
+        }
+        const result = parseInput();
+        if (result.error) {
+          renderError(result.error);
+          showToast('JSON 解析失败，请检查逗号、引号或括号', true);
+          return;
+        }
+        updateOutput(result.value, mode);
+        showToast(mode === 'compact' ? '已压缩成一行' : '格式化完成');
+      }
+
+      async function copyResult() {
+        if (!latestResult) {
+          showToast('暂时没有可复制的结果', true);
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(latestResult);
+          showToast('结果已复制到剪贴板');
+        } catch {
+          const helper = document.createElement('textarea');
+          helper.value = latestResult;
+          helper.style.position = 'fixed';
+          helper.style.opacity = '0';
+          document.body.appendChild(helper);
+          helper.select();
+          document.execCommand('copy');
+          helper.remove();
+          showToast('结果已复制到剪贴板');
+        }
+      }
+
+      async function pasteInput() {
+        try {
+          input.value = await navigator.clipboard.readText();
+          updateLineNumbers();
+          handleTransform('pretty');
+        } catch {
+          input.focus();
+          showToast('浏览器未允许自动粘贴，请使用 Ctrl / ⌘ + V', true);
+        }
+      }
+
+      function switchView(view) {
+        const showTree = view === 'tree';
+        codeOutput.classList.toggle('hidden', showTree);
+        treeView.classList.toggle('hidden', !showTree);
+        document.querySelectorAll('.view-tab').forEach((tab) => {
+          const active = tab.dataset.view === view;
+          tab.classList.toggle('active', active);
+          tab.setAttribute('aria-selected', String(active));
+        });
+        viewHint.textContent = showTree ? '结构视图 · 点击箭头展开/收起' : '代码视图';
+      }
+
+      input.addEventListener('input', () => {
+        updateLineNumbers();
+        if (!input.value.trim()) {
+          input.classList.remove('is-invalid');
+          setStatus('等待输入 JSON');
+        }
+      });
+      // 浏览器完成粘贴后再解析，确保 textarea 已经拿到完整内容；手动输入仍不会被频繁打断。
+      input.addEventListener('paste', () => {
+        window.setTimeout(() => {
+          updateLineNumbers();
+          handleTransform('pretty');
+        }, 0);
+      });
+      input.addEventListener('scroll', syncLineScroll);
+      input.addEventListener('keydown', (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+          event.preventDefault();
+          handleTransform('pretty');
+        }
+        if (event.key === 'Tab') {
+          event.preventDefault();
+          const start = input.selectionStart;
+          input.setRangeText('  ', start, input.selectionEnd, 'end');
+          updateLineNumbers();
+        }
+      });
+      document.getElementById('formatButton').addEventListener('click', () => handleTransform('pretty'));
+      document.getElementById('compressButton').addEventListener('click', () => handleTransform('compact'));
+      document.getElementById('copyButton').addEventListener('click', copyResult);
+      document.getElementById('pasteButton').addEventListener('click', pasteInput);
+      document.getElementById('selectAllButton').addEventListener('click', () => { input.focus(); input.select(); });
+      document.getElementById('sampleButton').addEventListener('click', () => {
+        input.value = JSON.stringify(SAMPLE, null, 2);
+        updateLineNumbers();
+        handleTransform('pretty');
+      });
+      document.getElementById('clearButton').addEventListener('click', () => {
+        input.value = '';
+        latestResult = '';
+        updateLineNumbers();
+        codeOutput.className = 'code-output empty';
+        codeOutput.innerHTML = '<div class="empty-state"><div class="empty-icon">{ }</div><div class="empty-title">等待一段 JSON</div><div class="empty-copy">格式化后，这里会显示可复制的漂亮代码。</div></div>';
+        treeView.innerHTML = '';
+        outputStats.textContent = '未生成结果';
+        setStatus('等待输入 JSON');
+        input.focus();
+      });
+      document.getElementById('expandButton').addEventListener('click', () => { setAllNodes(true); showToast('已展开全部层级'); });
+      document.getElementById('collapseButton').addEventListener('click', () => { setAllNodes(false); showToast('已收起全部层级'); });
+      document.querySelectorAll('.view-tab').forEach((tab) => tab.addEventListener('click', () => switchView(tab.dataset.view)));
+      treeView.addEventListener('click', (event) => {
+        const toggle = event.target.closest('[data-node-toggle]');
+        if (!toggle) return;
+        const id = toggle.dataset.nodeToggle;
+        const children = treeView.querySelector(`[data-node-children="${id}"]`);
+        if (!children) return;
+        const open = children.dataset.open !== 'true';
+        children.dataset.open = String(open);
+        toggle.setAttribute('aria-expanded', String(open));
+        toggle.setAttribute('aria-label', `${open ? '收起' : '展开'} 层级`);
+      });
+
+      input.value = JSON.stringify(SAMPLE, null, 2);
+      updateLineNumbers();
+      updateOutput(SAMPLE, 'pretty');
+    })();
+  </script>
+</body>
+</html>
