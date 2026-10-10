@@ -2,7 +2,9 @@
 
 供日常自用的浏览器工具箱，包含 JSON 格式化与结构查看、分表定位、照片裁剪和 SQL IN 条件生成。
 
-在线入口：https://lianliankan007.github.io/IPUtils/
+在线入口：https://lianliankan007.github.io/glimmer/
+
+项目与 GitHub 仓库名称：`glimmer`；中文展示名称：微光。
 
 工具也可以通过首页地址片段直接打开：`#json`、`#sharding`、`#photo`、`#sql`。
 
@@ -16,7 +18,7 @@ GitHub Pages 使用 `master` 分支的根目录作为发布源。在仓库的 **
 
 项目是纯静态页面，无需安装依赖或编译。根目录的 `.nojekyll` 用于跳过 Jekyll 处理，让 HTML、CSS 和 JavaScript 按原文件发布。推送到 `master` 后，GitHub 会自动重新部署；部署状态可在仓库的 **Actions** 或 **Settings → Pages** 中查看。
 
-首页和工具页使用相对资源路径，新增工具时也应保持这一约定，以适配 `/IPUtils/` 项目路径。
+首页和工具页使用相对资源路径，新增工具时也应保持这一约定，以适配 `/glimmer/` 项目路径。
 
 Pages 网站公开可访问。处理工具输入时不上传内容，不代表仓库和发布文件具有私有访问控制。
 
