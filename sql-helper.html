@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f1f2f7">
+  <meta name="description" content="把多行或逗号分隔的 ID 转成 SQL IN 条件，支持单引号、去重、换行和一键复制。">
+  <title>SQL 辅助 · 微光</title>
+  <link rel="stylesheet" href="./tool-theme.css">
+  <style>
+    .sql-mark { letter-spacing: -1px; font-size: 13px; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 15px 18px; border-bottom: 1px solid var(--line); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 18px; border-bottom: 1px solid var(--line); background: #fcfcfe; }
+    .option { display: grid; gap: 8px; font-size: 12px; color: #45495e; font-weight: 700; }
+    .check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); cursor: pointer; }
+    .check input[type=checkbox] { width: 16px; min-height: 16px; padding: 0; accent-color: var(--violet); }
+    .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .pane { min-width: 0; }
+    .pane + .pane { border-left: 1px solid var(--line); }
+    .pane-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 56px; padding: 10px 18px; border-bottom: 1px solid var(--line); }
+    .pane-header label { font-size: 13px; font-weight: 800; }
+    .counter { color: var(--muted); font-size: 11px; }
+    textarea { display: block; width: 100%; height: 330px; resize: vertical; padding: 18px; border: 0; color: #313548; background: #fbfbfd; font: 13px/1.8 var(--mono); tab-size: 2; }
+    textarea::placeholder { color: #a2a6b5; }
+    #sql-output { background: white; }
+    .message { min-height: 48px; margin: 0; padding: 14px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .message.error { color: var(--red); background: #fff6f7; }
+    .help { margin: 16px 2px 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
+    code { color: var(--violet-dark); font-family: var(--mono); }
+    @media (max-width: 900px) { .options { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) {
+      .editor-grid { grid-template-columns: 1fr; }
+      .pane + .pane { border-left: 0; border-top: 1px solid var(--line); }
+      .toolbar, .options, .pane-header { padding: 12px; }
+      .options { gap: 12px; }
+      textarea { height: 240px; padding: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark sql-mark" aria-hidden="true">SQL</div><div class="brand-copy"><div class="brand-name">SQL 辅助</div><div class="brand-subtitle">把一列 ID 变成查询条件</div></div></div>
+      <div class="topbar-note"><span class="status-dot"></span>本地转换 · 无需联网</div>
+    </header>
+    <section class="hero" aria-labelledby="pageTitle">
+      <div class="eyebrow">SQL 工作台</div>
+      <h1 id="pageTitle">一批 ID，一键变成 IN。</h1>
+      <p class="hero-description">粘贴列表，自动整理引号、逗号和换行。生成后直接复制，省去逐条拼接。</p>
+      <div class="hint-row"><span><i></i>保留超长 ID 与前导零</span><span><i></i>支持去重与换行</span><span><i></i>数据只在本地处理</span></div>
+    </section>
+    <section class="workspace" aria-label="SQL 列表转换工作区">
+      <div class="toolbar">
+        <div class="actions"><button class="button primary" id="generate" type="button">生成 SQL</button><button class="button" id="sample" type="button">载入示例</button><button class="button" id="clear" type="button">清空</button></div>
+        <label class="check"><input id="dedupe" type="checkbox" checked>去除重复值，保留原顺序</label>
+      </div>
+      <div class="options">
+        <label class="option" for="separator">输入分隔<select id="separator"><option value="auto">自动（逗号 / 换行 / Tab）</option><option value="lines">仅按换行</option><option value="spaces">空白 / 逗号 / 换行</option></select></label>
+        <label class="option" for="quote">值的引号<select id="quote"><option value="single">单引号（文本 ID）</option><option value="number">不加引号（整数 ID）</option></select></label>
+        <label class="option" for="per-line">输出排版<select id="per-line"><option value="0">单行</option><option value="1">每行 1 项</option><option value="5">每行 5 项</option><option value="10">每行 10 项</option></select></label>
+        <label class="option" for="field">字段名（可选）<input id="field" type="text" placeholder="例如 id 或 orders.id" autocomplete="off" spellcheck="false"></label>
+      </div>
+      <div class="editor-grid">
+        <div class="pane"><div class="pane-header"><label for="sql-input">输入 ID 列表</label><span class="counter" id="input-count">0 项</span></div><textarea id="sql-input" spellcheck="false" placeholder="10001&#10;10002&#10;10003&#10;&#10;也可以粘贴：'10001', '10002'" aria-describedby="input-help"></textarea></div>
+        <div class="pane"><div class="pane-header"><label for="sql-output">SQL 结果</label><button class="button" id="copy" type="button" disabled>复制结果</button></div><textarea id="sql-output" readonly spellcheck="false" placeholder="IN ('10001', '10002', '10003')" aria-label="SQL 结果"></textarea></div>
+      </div>
+      <p class="message" id="status" role="status" aria-live="polite">粘贴 ID 后自动生成，也可以点击“载入示例”。</p>
+    </section>
+    <p class="help" id="input-help">自动模式也支持中英文分号、中文逗号；忽略空项与未加引号值两端的空白。已有成对单引号或双引号会先解包，值内单引号会转为 <code>''</code>。这里只生成条件，不执行 SQL。</p>
+    <footer class="footer-note">SQL 辅助 · 本地转换，不存储、不上传</footer>
+  </main>
+  <script src="./sql-helper-core.js"></script>
+  <script>
+    'use strict';
+    const byId = id => document.getElementById(id);
+    const input = byId('sql-input'), output = byId('sql-output'), status = byId('status'), copy = byId('copy');
+
+    /** 实时更新结果；输入无效时清除旧 SQL，防止误复制上一次的条件。 */
+    function generate() {
+      status.classList.remove('error');
+      try {
+        const result = SqlHelper.buildSql(input.value, {
+          separator: byId('separator').value, quote: byId('quote').value,
+          perLine: Number(byId('per-line').value), field: byId('field').value, dedupe: byId('dedupe').checked
+        });
+        output.value = result.sql;
+        copy.disabled = !result.sql;
+        byId('input-count').textContent = `${result.total} 项`;
+        status.textContent = result.count ? `已生成 ${result.count} 项${result.removed ? `，去除 ${result.removed} 项重复值` : ''}。可直接复制 SQL 条件。` : '请输入至少一个 ID，空列表不会生成 IN ()。';
+      } catch (error) {
+        output.value = '';
+        copy.disabled = true;
+        byId('input-count').textContent = '待检查';
+        status.textContent = error.message;
+        status.classList.add('error');
+      }
+    }
+    input.addEventListener('input', generate);
+    byId('field').addEventListener('input', generate);
+    for (const id of ['separator', 'quote', 'per-line', 'dedupe']) byId(id).addEventListener('change', generate);
+    byId('generate').addEventListener('click', generate);
+    byId('sample').addEventListener('click', () => {
+      input.value = '10001\n10002\n10001\n00123\n9223372036854775807';
+      generate();
+    });
+    byId('clear').addEventListener('click', () => { input.value = ''; generate(); input.focus(); });
+    // 本地文件或剪贴板权限受限时选中结果，仍允许用户直接使用快捷键复制。
+    copy.addEventListener('click', async () => {
+      if (!output.value) return;
+      try {
+        await navigator.clipboard.writeText(output.value);
+        status.textContent = 'SQL 条件已复制。';
+      } catch {
+        output.focus();
+        output.select();
+        status.textContent = '无法自动复制，已选中结果，请按 Ctrl+C（Mac 使用 ⌘C）复制。';
+      }
+    });
+  </script>
+</body>
+</html>
