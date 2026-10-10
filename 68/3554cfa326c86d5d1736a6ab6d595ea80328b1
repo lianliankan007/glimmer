@@ -1,0 +1,27 @@
+sql-helper.html
+  s_b278a6a4226843::t_c2cccf0bed0654 8
+json-lens.html
+  s_b278a6a4226843::t_c2cccf0bed0654 7
+README.md
+  s_b278a6a4226843::t_c2cccf0bed0654 5-7,21
+sharding-table-finder.html
+  s_b278a6a4226843::t_c2cccf0bed0654 7
+photo-crop.html
+  s_b278a6a4226843::t_c2cccf0bed0654 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "683554cfa326c86d5d1736a6ab6d595ea80328b1",
+  "prompts": {},
+  "sessions": {
+    "s_b278a6a4226843": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1235a-3621-7f91-8fcb-1c59f87ab032",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "eddie.pan2 <eddie.pan2@jtexpress.com>"
+    }
+  }
+}
